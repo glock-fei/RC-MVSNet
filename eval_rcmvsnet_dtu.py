@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from multiprocessing import Pool
 from functools import partial
 import signal
+import logging
 
 cudnn.benchmark = True
 
@@ -78,7 +79,7 @@ if args.testpath_single_scene:
 num_stage = len([int(nd) for nd in args.ndepths.split(",") if nd])
 
 Interval_Scale = args.interval_scale
-
+log = logging.getLogger(__name__)
 
 # print("***********Interval_Scale**********\n", Interval_Scale)
 
