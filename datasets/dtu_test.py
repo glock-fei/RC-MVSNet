@@ -54,7 +54,7 @@ class MVSDataset(Dataset):
                         metas.append((scan, ref_view, src_views, scan))
 
         self.interval_scale = interval_scale_dict
-        print("dataset", self.mode, "metas:", len(metas), "interval_scale:{}".format(self.interval_scale))
+        # print("dataset", self.mode, "metas:", len(metas), "interval_scale:{}".format(self.interval_scale))
         return metas
 
     def define_transforms(self):

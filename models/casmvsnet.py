@@ -135,10 +135,10 @@ class CascadeMVSNet(nn.Module):
         self.arch_mode = arch_mode
         self.cr_base_chs = cr_base_chs
         self.num_stage = len(ndepths)
-        print("**********netphs:{}, depth_intervals_ratio:{},  grad:{}, chs:{}************".format(ndepths,
-                                                                                                   depth_interals_ratio,
-                                                                                                   self.grad_method,
-                                                                                                   self.cr_base_chs))
+        # print("**********netphs:{}, depth_intervals_ratio:{},  grad:{}, chs:{}************".format(ndepths,
+        #                                                                                            depth_interals_ratio,
+        #                                                                                            self.grad_method,
+        #                                                                                            self.cr_base_chs))
 
         assert len(ndepths) == len(depth_interals_ratio)
 
@@ -322,10 +322,10 @@ class CascadeMVSNet_eval(nn.Module):
         self.arch_mode = arch_mode
         self.cr_base_chs = cr_base_chs
         self.num_stage = len(ndepths)
-        print("**********netphs:{}, depth_intervals_ratio:{},  grad:{}, chs:{}************".format(ndepths,
-                                                                                                   depth_interals_ratio,
-                                                                                                   self.grad_method,
-                                                                                                   self.cr_base_chs))
+        # print("**********netphs:{}, depth_intervals_ratio:{},  grad:{}, chs:{}************".format(ndepths,
+        #                                                                                            depth_interals_ratio,
+        #                                                                                            self.grad_method,
+        #                                                                                            self.cr_base_chs))
 
         assert len(ndepths) == len(depth_interals_ratio)
 

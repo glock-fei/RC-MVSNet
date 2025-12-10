@@ -76,16 +76,16 @@ parser.add_argument('--using_apex', action='store_true', help='using apex, need 
 parser.add_argument('--sync_bn', action='store_true',help='enabling apex sync BN.')
 
 # parse arguments and check
-args = parser.parse_args()
-print("argv:", sys.argv[1:])
-print_args(args)
-if args.testpath_single_scene:
-    args.testpath = os.path.dirname(args.testpath_single_scene)
-
-num_stage = len([int(nd) for nd in args.ndepths.split(",") if nd])
-
-Interval_Scale = args.interval_scale
-print("***********Interval_Scale**********\n", Interval_Scale)
+# args = parser.parse_args()
+# print("argv:", sys.argv[1:])
+# print_args(args)
+# if args.testpath_single_scene:
+#     args.testpath = os.path.dirname(args.testpath_single_scene)
+#
+# num_stage = len([int(nd) for nd in args.ndepths.split(",") if nd])
+#
+# Interval_Scale = args.interval_scale
+# print("***********Interval_Scale**********\n", Interval_Scale)
 
 
 # read intrinsics and extrinsics
@@ -183,12 +183,15 @@ def save_scene_depth(testlist):
                 grad_method=args.grad_method)
 
     # load checkpoint file specified by args.loadckpt
-    print("loading model {}".format(args.loadckpt))
+    print("loading model {} ...".format(args.loadckpt))
     state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"))
     model.load_state_dict(state_dict['model'], strict=True)
     model = nn.DataParallel(model)
     model.cuda()
     model.eval()
+
+    image_total = len(TestImgLoader)
+    total_size = len(str(image_total))
 
     with torch.no_grad():
         for batch_idx, sample in enumerate(TestImgLoader):
@@ -208,7 +211,9 @@ def save_scene_depth(testlist):
             # print("sample[imgs]: {}".format(sample["imgs"].shape))
             # imgs = inv_normalize(sample["imgs"].squeeze()).unsqueeze(dim=0).numpy()
             # imgs = sample["imgs_raw"].numpy()
-            print('Iter {}/{}, Time:{} Res:{}'.format(batch_idx, len(TestImgLoader), end_time - start_time, imgs[0].shape))
+            # print('Progress {}/{}, Time:{} Res:{}'.format(batch_idx, image_total, end_time - start_time, imgs[0].shape))
+            print(f"Progress: {batch_idx:0{total_size}d}/{image_total} - "
+                  f"Time: {end_time - start_time:.2f}s", flush=True)
 
             # save depth maps and confidence maps
             for filename, cam, img, depth_est, photometric_confidence in zip(filenames, cams, imgs, \
@@ -346,6 +351,12 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
     pair_data = read_pair_file(pair_file)
     nviews = len(pair_data)
 
+    print(f"Scene: {os.path.basename(scan_folder):<35} "
+          f"│ Views: {nviews:<8} "
+          f"│ Pairs: {os.path.basename(pair_file):<30} "
+          f"│ Output: {os.path.basename(plyfilename):<35}",
+          flush=True)
+    print("-" * 50, flush=True)
     # for each reference view and the corresponding source views
     for ref_view, src_views in pair_data:
         # src_views = src_views[:args.num_view]
@@ -393,10 +404,13 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
         save_mask(os.path.join(out_folder, "mask/{:0>8}_geo.png".format(ref_view)), geo_mask)
         save_mask(os.path.join(out_folder, "mask/{:0>8}_final.png".format(ref_view)), final_mask)
 
-        print("processing {}, ref-view{:0>2}, photo/geo/final-mask:{}/{}/{}".format(scan_folder, ref_view,
-                                                                                    photo_mask.mean(),
-                                                                                    geo_mask.mean(), final_mask.mean()))
-        filtered_depth =  ref_depth_est * final_mask.astype(np.float32)
+        # print("processing {}, ref-view{:0>2}, photo/geo/final-mask:{}/{}/{}".format(scan_folder, ref_view,
+        #                                                                             photo_mask.mean(),
+        #                                                                             geo_mask.mean(), final_mask.mean()))
+        print(f"Reference View: {ref_view:02d} | Photo: {photo_mask.mean():.4f}, "
+              f"Geo: {geo_mask.mean():.4f}, Final: {final_mask.mean():.4f}",
+              flush=True)
+        filtered_depth = ref_depth_est * final_mask.astype(np.float32)
         os.makedirs(os.path.join(out_folder, "filtered_depth"), exist_ok=True)
         plt.imsave(os.path.join(out_folder, "filtered_depth/{:0>8}.jpg".format(ref_view)), filtered_depth, cmap="rainbow")
         if args.display:
@@ -451,7 +465,7 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
 
     el = PlyElement.describe(vertex_all, 'vertex')
     PlyData([el]).write(plyfilename)
-    print("saving the final model to", plyfilename)
+    print("Saving the final model to", plyfilename)
 
 
 def init_worker():

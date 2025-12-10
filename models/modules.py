@@ -364,7 +364,7 @@ class FeatureNet(nn.Module):
     def __init__(self, base_channels, num_stage=3, stride=4, arch_mode="unet"):
         super(FeatureNet, self).__init__()
         assert arch_mode in ["unet", "fpn"], print("mode must be in 'unet' or 'fpn', but get:{}".format(arch_mode))
-        print("*************feature extraction arch mode:{}****************".format(arch_mode))
+        # print("*************feature extraction arch mode:{}****************".format(arch_mode))
         self.arch_mode = arch_mode
         self.stride = stride
         self.base_channels = base_channels
