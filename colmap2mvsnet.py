@@ -16,7 +16,7 @@ import cv2
 import logging
 import argparse
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================ read_model.py ============================#
