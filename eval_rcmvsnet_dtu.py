@@ -194,7 +194,6 @@ def save_scene_depth(testlist: List[str]) -> None:
     )
 
     # ==================== Load Dataset ====================
-    log.info("Loading dataset: %s", args.dataset)
     log.info("Test path: %s", args.testpath)
 
     MVSDataset = find_dataset_def(args.dataset)
@@ -269,7 +268,7 @@ def save_scene_depth(testlist: List[str]) -> None:
                     "confidence_img": output_dir / filename.format("confidence_map", ".jpg"),
                     "cam": output_dir / filename.format("cams", "_cam.txt"),
                     "image": output_dir / filename.format("images", ".jpg"),
-                    "ply": output_dir / filename.format("ply_local", ".ply"),
+                    # "ply": output_dir / filename.format("ply_local", ".ply"),
                 }
                 if idx == 0:
                     for path in paths.values():
@@ -299,16 +298,16 @@ def save_scene_depth(testlist: List[str]) -> None:
                 write_cam(str(paths["cam"]), cam)
                 cv2.imwrite(str(paths["image"]), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-                # Generate point cloud (last batch only)
-                if batch_idx == total_batches - 1:
-                    ratio = stage_downsample.get(num_stage, 1.0)
-                    if ratio < 1.0:
-                        downsample_img = cv2.resize(img, (int(img.shape[1] * ratio), int(img.shape[0] * ratio)))
-                    else:
-                        downsample_img = img
-
-                    generate_pointcloud(downsample_img, depth, str(paths["ply"]), cam[1, :3, :3])
-                    log.info("Generated point cloud: %s", paths["ply"])
+                # # Generate point cloud (last batch only)
+                # if batch_idx == total_batches - 1:
+                #     ratio = stage_downsample.get(num_stage, 1.0)
+                #     if ratio < 1.0:
+                #         downsample_img = cv2.resize(img, (int(img.shape[1] * ratio), int(img.shape[0] * ratio)))
+                #     else:
+                #         downsample_img = img
+                #
+                #     generate_pointcloud(downsample_img, depth, str(paths["ply"]), cam[1, :3, :3])
+                #     log.info("Generated point cloud: %s", paths["ply"])
 
             # Log progress
             avg_time = total_time / (batch_idx + 1)
@@ -323,10 +322,8 @@ def save_scene_depth(testlist: List[str]) -> None:
     torch.cuda.empty_cache()
     gc.collect()
 
-    log.info("-" * 60)
     log.info("Depth estimation completed")
     log.info("Total time: %.2fs | Average: %.2fs/batch", total_time, total_time / total_batches)
-    log.info("Output saved to: %s", output_dir)
     log.info("=" * 60)
 
 
@@ -518,7 +515,7 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
 
     el = PlyElement.describe(vertex_all, 'vertex')
     PlyData([el]).write(plyfilename)
-    print("saving the final model to", plyfilename)
+    print("Saved the final model to", plyfilename)
 
 
 def init_worker():
