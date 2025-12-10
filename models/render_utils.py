@@ -92,7 +92,7 @@ def get_rays_mvs(H, W, intrinsic, c2w, N=1024, isRandom=True, is_precrop_iters=F
         else:
             xs, ys = torch.randint(0,W,(N,)).float().to(device), torch.randint(0,H,(N,)).float().to(device)
     else:
-        ys, xs = torch.meshgrid(torch.linspace(0, H - 1, H), torch.linspace(0, W - 1, W))  # pytorch's meshgrid has indexing='ij'
+        ys, xs = torch.meshgrid(torch.linspace(0, H - 1, H), torch.linspace(0, W - 1, W), indexing='ij')  # pytorch's meshgrid has indexing='ij'
         ys, xs = ys.reshape(-1), xs.reshape(-1)
         if chunk>0:
             ys, xs = ys[idx*chunk:(idx+1)*chunk], xs[idx*chunk:(idx+1)*chunk]
@@ -291,7 +291,7 @@ def get_ptsvolume(H, W, D, pad, near_far, intrinsic, c2w):
 
     linspace_x = torch.linspace(corners[0, 0], corners[1, 0], W+2*pad)
     linspace_y = torch.linspace(corners[ 0, 1], corners[2, 1], H+2*pad)
-    ys, xs = torch.meshgrid(linspace_y, linspace_x)  # HW
+    ys, xs = torch.meshgrid(linspace_y, linspace_x, indexing='ij')  # HW
     near_plane = torch.stack((xs,ys,torch.ones_like(xs)),dim=-1).to(device)*near
     far_plane = torch.stack((xs,ys,torch.ones_like(xs)),dim=-1).to(device)*far
 

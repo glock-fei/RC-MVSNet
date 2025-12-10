@@ -1,4 +1,3 @@
-
 import argparse, os, time, sys, gc, cv2
 import torch
 import torch.nn as nn
@@ -27,9 +26,9 @@ parser = argparse.ArgumentParser(description='Predict depth, filter, and fuse')
 parser.add_argument('--model', default='mvsnet', help='select model')
 
 parser.add_argument('--dataset', default='dtu_test', help='select dataset')
-parser.add_argument('--testpath', default="/cluster/51/dichang/datasets/mvsnet/dtu_test",help='test datapath')
+parser.add_argument('--testpath', default="/cluster/51/dichang/datasets/mvsnet/dtu_test", help='test datapath')
 parser.add_argument('--testpath_single_scene', help='testing data path for single scene')
-parser.add_argument('--testlist', default='./lists/dtu/test.txt',help='test list')
+parser.add_argument('--testlist', default='./lists/dtu/test.txt', help='test list')
 
 parser.add_argument('--batch_size', type=int, default=1, help='testing batch size')
 parser.add_argument('--numdepth', type=int, default=192, help='the number of depth values')
@@ -54,37 +53,33 @@ parser.add_argument('--fix_res', action='store_true', help='scene all using same
 parser.add_argument('--num_worker', type=int, default=4, help='depth_filer worker')
 parser.add_argument('--save_freq', type=int, default=20, help='save freq of local pcd')
 
-
-#filter
+# filter
 parser.add_argument('--prob_thres', type=float, default=0.8, help='prob confidence')
 parser.add_argument('--num_consistency', type=int, default=3, help='threshold of num view')
 parser.add_argument('--img_dist_thres', type=float, default=0.5, help='hyper1')
 parser.add_argument('--depth_thres', type=float, default=0.01, help='hyper2')
 
-
-
-parser.add_argument('--no_test',action='store_true',help='fusion without testing')
-parser.add_argument('--no_filter',action='store_true',help='testing without fusion')
+parser.add_argument('--no_test', action='store_true', help='fusion without testing')
+parser.add_argument('--no_filter', action='store_true', help='testing without fusion')
 # os environment
-parser.add_argument('--true_gpu',default="1",help='using true gpu')
+parser.add_argument('--true_gpu', default="1", help='using true gpu')
 parser.add_argument('--stage', default=False, help='train stage by stage')
 
-
-
-
 parser.add_argument('--using_apex', action='store_true', help='using apex, need to install apex')
-parser.add_argument('--sync_bn', action='store_true',help='enabling apex sync BN.')
+parser.add_argument('--sync_bn', action='store_true', help='enabling apex sync BN.')
 
 # parse arguments and check
 args = parser.parse_args()
 # print("argv:", sys.argv[1:])
 # print_args(args)
-# if args.testpath_single_scene:
-#     args.testpath = os.path.dirname(args.testpath_single_scene)
-#
-# num_stage = len([int(nd) for nd in args.ndepths.split(",") if nd])
-#
-# Interval_Scale = args.interval_scale
+if args.testpath_single_scene:
+    args.testpath = os.path.dirname(args.testpath_single_scene)
+
+num_stage = len([int(nd) for nd in args.ndepths.split(",") if nd])
+
+Interval_Scale = args.interval_scale
+
+
 # print("***********Interval_Scale**********\n", Interval_Scale)
 
 
@@ -135,6 +130,7 @@ def read_pair_file(filename):
                 data.append((ref_view, src_views))
     return data
 
+
 def write_cam(file, cam):
     f = open(file, "w")
     f.write('extrinsic\n')
@@ -150,24 +146,25 @@ def write_cam(file, cam):
             f.write(str(cam[1][i][j]) + ' ')
         f.write('\n')
 
-    f.write('\n' + str(cam[1][3][0]) + ' ' + str(cam[1][3][1]) + ' ' + str(cam[1][3][2]) + ' ' + str(cam[1][3][3]) + '\n')
+    f.write(
+        '\n' + str(cam[1][3][0]) + ' ' + str(cam[1][3][1]) + ' ' + str(cam[1][3][2]) + ' ' + str(cam[1][3][3]) + '\n')
 
     f.close()
 
-def save_depth(testlist):
 
+def save_depth(testlist):
     for scene in testlist:
         save_scene_depth([scene])
-    
+
     # save_scene_depth(testlist)
+
 
 # run CasMVS model to save depth maps and confidence maps
 def save_scene_depth(testlist):
     inv_normalize = transforms.Normalize(
-        mean=[-0.485/0.229, -0.456/0.224, -0.406/0.255],
-        std=[1/0.229, 1/0.224, 1/0.255]
+        mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.255],
+        std=[1 / 0.229, 1 / 0.224, 1 / 0.255]
     )
-
 
     # dataset, dataloader
     MVSDataset = find_dataset_def(args.dataset)
@@ -175,16 +172,15 @@ def save_scene_depth(testlist):
                               max_h=args.max_h, max_w=args.max_w, fix_res=args.fix_res)
     TestImgLoader = DataLoader(test_dataset, args.batch_size, shuffle=False, num_workers=1, drop_last=False)
 
-
     model = CascadeMVSNet_eval(refine=False, ndepths=[int(nd) for nd in args.ndepths.split(",") if nd],
-                depth_interals_ratio=[float(d_i) for d_i in args.depth_inter_r.split(",") if d_i],
-                share_cr=args.share_cr,
-                cr_base_chs=[int(ch) for ch in args.cr_base_chs.split(",") if ch],
-                grad_method=args.grad_method)
+                               depth_interals_ratio=[float(d_i) for d_i in args.depth_inter_r.split(",") if d_i],
+                               share_cr=args.share_cr,
+                               cr_base_chs=[int(ch) for ch in args.cr_base_chs.split(",") if ch],
+                               grad_method=args.grad_method)
 
     # load checkpoint file specified by args.loadckpt
-    print("loading model {} ...".format(args.loadckpt))
-    state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"))
+    print("loading model {}".format(args.loadckpt))
+    state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"), weights_only=True)
     model.load_state_dict(state_dict['model'], strict=True)
     model = nn.DataParallel(model)
     model.cuda()
@@ -205,32 +201,28 @@ def save_scene_depth(testlist):
             cams = sample["proj_matrices"]["stage{}".format(num_stage)].numpy()
             # imgs = sample["imgs"].numpy()
             imgs = sample["imgs"]
-            depth_values=sample["depth_values"]
-            depth_start,depth_end =depth_values[0][0],depth_values[0][-1]
-            
-            # print("sample[imgs]: {}".format(sample["imgs"].shape))
-            # imgs = inv_normalize(sample["imgs"].squeeze()).unsqueeze(dim=0).numpy()
-            # imgs = sample["imgs_raw"].numpy()
-            # print('Progress {}/{}, Time:{} Res:{}'.format(batch_idx, image_total, end_time - start_time, imgs[0].shape))
+            depth_values = sample["depth_values"]
+            depth_start, depth_end = depth_values[0][0], depth_values[0][-1]
+
             print(f"Progress: {batch_idx:0{total_size}d}/{image_total} - "
                   f"Time: {end_time - start_time:.2f}s", flush=True)
 
             # save depth maps and confidence maps
-            for filename, cam, img, depth_est, photometric_confidence in zip(filenames, cams, imgs, \
-                                                            outputs["depth"], outputs["photometric_confidence"]):
-                img = img[0]  #ref view
+            for filename, cam, img, depth_est, photometric_confidence in zip(filenames, cams, imgs,
+                                                                             outputs["depth"],
+                                                                             outputs["photometric_confidence"]):
+                img = img[0]  # ref view
                 img = inv_normalize(img).numpy()
-                cam = cam[0]  #ref cam
-                
+                cam = cam[0]  # ref cam
+
                 depth_filename = os.path.join(args.outdir, filename.format('depth_est', '.pfm'))
                 confidence_filename = os.path.join(args.outdir, filename.format('confidence', '.pfm'))
                 confidence_img_filename = os.path.join(args.outdir, filename.format('confidence_map', '.jpg'))
                 cam_filename = os.path.join(args.outdir, filename.format('cams', '_cam.txt'))
                 img_filename = os.path.join(args.outdir, filename.format('images', '.jpg'))
                 ply_filename = os.path.join(args.outdir, filename.format('ply_local', '.ply'))
-                pred_depth_img_path = os.path.join(args.outdir,filename.format("depth_map",'.jpg'))
-                
-                
+                pred_depth_img_path = os.path.join(args.outdir, filename.format("depth_map", '.jpg'))
+
                 os.makedirs(depth_filename.rsplit('/', 1)[0], exist_ok=True)
                 os.makedirs(confidence_filename.rsplit('/', 1)[0], exist_ok=True)
                 os.makedirs(confidence_img_filename.rsplit('/', 1)[0], exist_ok=True)
@@ -238,20 +230,21 @@ def save_scene_depth(testlist):
                 os.makedirs(img_filename.rsplit('/', 1)[0], exist_ok=True)
                 os.makedirs(ply_filename.rsplit('/', 1)[0], exist_ok=True)
                 os.makedirs(pred_depth_img_path.rsplit('/', 1)[0], exist_ok=True)
-                
-                #save depth maps
+
+                # save depth maps
                 save_pfm(depth_filename, depth_est)
 
-                #save depth_image_map_rgb
+                # save depth_image_map_rgb
                 # pred_depth_img_path = os.path.join(args.outdir,filename.format("depth_map",'.jpg'))
                 plt.imsave(pred_depth_img_path, depth_est, cmap="rainbow", vmin=depth_start, vmax=depth_end)
-                
-                confidence_min =np.min(photometric_confidence)
+
+                confidence_min = np.min(photometric_confidence)
                 confidence_max = np.max(photometric_confidence)
-                #save confidence maps
+                # save confidence maps
                 save_pfm(confidence_filename, photometric_confidence)
-                plt.imsave(confidence_img_filename, photometric_confidence, cmap="rainbow",vmin=confidence_min,vmax=confidence_max)
-                #save cams, img
+                plt.imsave(confidence_img_filename, photometric_confidence, cmap="rainbow", vmin=confidence_min,
+                           vmax=confidence_max)
+                # save cams, img
                 write_cam(cam_filename, cam)
                 img = np.clip(np.transpose(img, (1, 2, 0)) * 255, 0, 255).astype(np.uint8)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -275,7 +268,7 @@ def save_scene_depth(testlist):
                 elif num_stage == 3:
                     downsample_img = img
 
-                if batch_idx  == (len(TestImgLoader)-1):
+                if batch_idx == (len(TestImgLoader) - 1):
                     generate_pointcloud(downsample_img, depth_est, ply_filename, cam[1, :3, :3])
 
     torch.cuda.empty_cache()
@@ -323,11 +316,16 @@ def reproject_with_depth(depth_ref, intrinsics_ref, extrinsics_ref, depth_src, i
     return depth_reprojected, x_reprojected, y_reprojected, x_src, y_src
 
 
-def check_geometric_consistency(depth_ref, intrinsics_ref, extrinsics_ref, depth_src, intrinsics_src, extrinsics_src,img_dist_thresh, depth_thresh):
+def check_geometric_consistency(depth_ref, intrinsics_ref, extrinsics_ref, depth_src, intrinsics_src, extrinsics_src,
+                                img_dist_thresh, depth_thresh):
     width, height = depth_ref.shape[1], depth_ref.shape[0]
     x_ref, y_ref = np.meshgrid(np.arange(0, width), np.arange(0, height))
-    depth_reprojected, x2d_reprojected, y2d_reprojected, x2d_src, y2d_src = reproject_with_depth(depth_ref, intrinsics_ref, extrinsics_ref,
-                                                     depth_src, intrinsics_src, extrinsics_src)
+    depth_reprojected, x2d_reprojected, y2d_reprojected, x2d_src, y2d_src = reproject_with_depth(depth_ref,
+                                                                                                 intrinsics_ref,
+                                                                                                 extrinsics_ref,
+                                                                                                 depth_src,
+                                                                                                 intrinsics_src,
+                                                                                                 extrinsics_src)
     # check |p_reproj-p_1| < 1
     dist = np.sqrt((x2d_reprojected - x_ref) ** 2 + (y2d_reprojected - y_ref) ** 2)
 
@@ -335,13 +333,14 @@ def check_geometric_consistency(depth_ref, intrinsics_ref, extrinsics_ref, depth
     depth_diff = np.abs(depth_reprojected - depth_ref)
     relative_depth_diff = depth_diff / depth_ref
 
-    mask = np.logical_and(dist < img_dist_thresh , relative_depth_diff < depth_thresh)
+    mask = np.logical_and(dist < img_dist_thresh, relative_depth_diff < depth_thresh)
     depth_reprojected[~mask] = 0
 
     return mask, depth_reprojected, x2d_src, y2d_src
 
 
-def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_threshold, num_consistent, img_dist_thresh, depth_thresh):
+def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_threshold, num_consistent, img_dist_thresh,
+                 depth_thresh):
     # the pair file
     pair_file = os.path.join(pair_folder, "pair.txt")
     # for the final point cloud
@@ -351,12 +350,6 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
     pair_data = read_pair_file(pair_file)
     nviews = len(pair_data)
 
-    print(f"Scene: {os.path.basename(scan_folder):<35} "
-          f"│ Views: {nviews:<8} "
-          f"│ Pairs: {os.path.basename(pair_file):<30} "
-          f"│ Output: {os.path.basename(plyfilename):<35}",
-          flush=True)
-    print("-" * 50, flush=True)
     # for each reference view and the corresponding source views
     for ref_view, src_views in pair_data:
         # src_views = src_views[:args.num_view]
@@ -385,9 +378,12 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
             # the estimated depth of the source view
             src_depth_est = read_pfm(os.path.join(out_folder, 'depth_est/{:0>8}.pfm'.format(src_view)))[0]
 
-            geo_mask, depth_reprojected, x2d_src, y2d_src = check_geometric_consistency(ref_depth_est, ref_intrinsics, ref_extrinsics,
-                                                                      src_depth_est,
-                                                                      src_intrinsics, src_extrinsics,img_dist_thresh=img_dist_thresh, depth_thresh=depth_thresh)
+            geo_mask, depth_reprojected, x2d_src, y2d_src = check_geometric_consistency(ref_depth_est, ref_intrinsics,
+                                                                                        ref_extrinsics,
+                                                                                        src_depth_est,
+                                                                                        src_intrinsics, src_extrinsics,
+                                                                                        img_dist_thresh=img_dist_thresh,
+                                                                                        depth_thresh=depth_thresh)
             geo_mask_sum += geo_mask.astype(np.int32)
             all_srcview_depth_ests.append(depth_reprojected)
             all_srcview_x.append(x2d_src)
@@ -404,15 +400,13 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
         save_mask(os.path.join(out_folder, "mask/{:0>8}_geo.png".format(ref_view)), geo_mask)
         save_mask(os.path.join(out_folder, "mask/{:0>8}_final.png".format(ref_view)), final_mask)
 
-        # print("processing {}, ref-view{:0>2}, photo/geo/final-mask:{}/{}/{}".format(scan_folder, ref_view,
-        #                                                                             photo_mask.mean(),
-        #                                                                             geo_mask.mean(), final_mask.mean()))
         print(f"Reference View: {ref_view:02d} | Photo: {photo_mask.mean():.4f}, "
               f"Geo: {geo_mask.mean():.4f}, Final: {final_mask.mean():.4f}",
               flush=True)
         filtered_depth = ref_depth_est * final_mask.astype(np.float32)
         os.makedirs(os.path.join(out_folder, "filtered_depth"), exist_ok=True)
-        plt.imsave(os.path.join(out_folder, "filtered_depth/{:0>8}.jpg".format(ref_view)), filtered_depth, cmap="rainbow")
+        plt.imsave(os.path.join(out_folder, "filtered_depth/{:0>8}.jpg".format(ref_view)), filtered_depth,
+                   cmap="rainbow")
         if args.display:
             import cv2
             cv2.imshow('ref_img', ref_img[:, :, ::-1])
@@ -428,7 +422,7 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
         valid_points = final_mask
         print("valid_points", valid_points.mean())
         x, y, depth = x[valid_points], y[valid_points], depth_est_averaged[valid_points]
-        #color = ref_img[1:-16:4, 1::4, :][valid_points]  # hardcoded for DTU dataset
+        # color = ref_img[1:-16:4, 1::4, :][valid_points]  # hardcoded for DTU dataset
 
         if num_stage == 1:
             color = ref_img[1::4, 1::4, :][valid_points]
@@ -465,7 +459,7 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
 
     el = PlyElement.describe(vertex_all, 'vertex')
     PlyData([el]).write(plyfilename)
-    print("Saving the final model to", plyfilename)
+    print("saving the final model to", plyfilename)
 
 
 def init_worker():
@@ -476,6 +470,7 @@ def init_worker():
 
 
 def pcd_filter_worker(scan):
+    scan_id = 1
     if args.testlist != "all":
         scan_id = int(scan[4:])
         save_name = 'mvsnet{:0>3}_l3.ply'.format(scan_id)
@@ -485,34 +480,35 @@ def pcd_filter_worker(scan):
     scan_folder = os.path.join(args.outdir, scan)
     out_folder = os.path.join(args.outdir, scan)
     img_dist_thres = {
-        '1': 0.5, 
-        '4': 0.5, 
-        '9': 0.5, 
-        '10': 0.25, 
-        '11': 0.75, 
+        '1': 0.5,
+        '4': 0.5,
+        '9': 0.5,
+        '10': 0.25,
+        '11': 0.75,
         '12': 0.25,
-        '13': 0.75, 
-        '15': 0.5, 
-        '23': 0.5, 
-        '24': 0.5, 
-        '29': 0.5, 
-        '32': 0.5, 
-        '33': 0.5, 
-        '34': 0.25, 
-        '48': 0.75, 
-        '49': 0.5, 
-        '62': 0.5, 
-        '75': 0.25, 
-        '77': 0.25, 
-        '110': 0.25,     
-        '114': 0.5, 
-        '118': 0.75, 
+        '13': 0.75,
+        '15': 0.5,
+        '23': 0.5,
+        '24': 0.5,
+        '29': 0.5,
+        '32': 0.5,
+        '33': 0.5,
+        '34': 0.25,
+        '48': 0.75,
+        '49': 0.5,
+        '62': 0.5,
+        '75': 0.25,
+        '77': 0.25,
+        '110': 0.25,
+        '114': 0.5,
+        '118': 0.75,
     }
-    filter_depth(pair_folder, scan_folder, out_folder, os.path.join(args.outdir, save_name), prob_threshold=args.prob_thres, num_consistent=args.num_consistency, img_dist_thresh=img_dist_thres[str(scan_id)], depth_thresh=args.depth_thres)
+    filter_depth(pair_folder, scan_folder, out_folder, os.path.join(args.outdir, save_name),
+                 prob_threshold=args.prob_thres, num_consistent=args.num_consistency,
+                 img_dist_thresh=img_dist_thres[str(scan_id)], depth_thresh=args.depth_thres)
 
 
 def pcd_filter(testlist, number_worker):
-
     partial_func = partial(pcd_filter_worker)
 
     p = Pool(number_worker, init_worker)
@@ -525,6 +521,7 @@ def pcd_filter(testlist, number_worker):
         p.close()
     p.join()
 
+
 if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = args.true_gpu
     if args.testlist != "all":
@@ -532,14 +529,13 @@ if __name__ == '__main__':
             content = f.readlines()
             testlist = [line.rstrip() for line in content]
     else:
-        #for tanks & temples or eth3d or colmap
+        # for tanks & temples or eth3d or colmap
         testlist = [e for e in os.listdir(args.testpath) if os.path.isdir(os.path.join(args.testpath, e))] \
             if not args.testpath_single_scene else [os.path.basename(args.testpath_single_scene)]
 
     # step1. save all the depth maps and the masks in outputs directory
     if not args.no_test:
         save_depth(testlist)
-
 
     # step2. filter saved depth maps with photometric confidence maps and geometric constraints
     if not args.no_filter:
