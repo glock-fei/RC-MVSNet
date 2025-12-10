@@ -24,6 +24,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Tuple
 
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 log = logging.getLogger(__name__)
 
 cudnn.benchmark = True
@@ -192,12 +193,6 @@ def save_scene_depth(testlist: List[str]) -> None:
         std=[1 / s for s in norm_std]
     )
 
-    # ==================== Setup Output Directories ====================
-    log.info("Setting up output directories: %s", output_dir)
-    subdirs = ["depth_est", "depth_map", "confidence", "confidence_map", "cams", "images", "ply_local"]
-    for subdir in subdirs:
-        (output_dir / subdir).mkdir(parents=True, exist_ok=True)
-
     # ==================== Load Dataset ====================
     log.info("Loading dataset: %s", args.dataset)
     log.info("Test path: %s", args.testpath)
@@ -276,6 +271,9 @@ def save_scene_depth(testlist: List[str]) -> None:
                     "image": output_dir / filename.format("images", ".jpg"),
                     "ply": output_dir / filename.format("ply_local", ".ply"),
                 }
+                if idx == 0:
+                    for path in paths.values():
+                        path.parent.mkdir(parents=True, exist_ok=True)
 
                 # Get sample data
                 img_tensor = sample["imgs"][idx][0]  # Reference view
