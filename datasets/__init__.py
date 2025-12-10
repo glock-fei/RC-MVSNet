@@ -1,3 +1,4 @@
+from .dtu_test import *
 import importlib
 
 # find the dataset definition by name, for example dtu_yao (dtu_yao.py)
