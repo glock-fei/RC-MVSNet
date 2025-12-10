@@ -76,7 +76,7 @@ parser.add_argument('--using_apex', action='store_true', help='using apex, need 
 parser.add_argument('--sync_bn', action='store_true',help='enabling apex sync BN.')
 
 # parse arguments and check
-# args = parser.parse_args()
+args = parser.parse_args()
 # print("argv:", sys.argv[1:])
 # print_args(args)
 # if args.testpath_single_scene:
