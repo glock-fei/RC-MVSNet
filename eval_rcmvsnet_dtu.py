@@ -160,119 +160,172 @@ def save_depth(testlist):
 
 
 # run CasMVS model to save depth maps and confidence maps
-def save_scene_depth(testlist):
+def save_scene_depth(testlist: List[str]) -> None:
+    """
+    Estimate depth from multi-view images and save results.
+
+    This function performs:
+        1. Load model and dataset
+        2. Run depth estimation inference
+        3. Save depth maps, confidence maps, camera parameters, and point clouds
+
+    Args:
+        testlist: List of test scenes to process
+    """
+    log.info("=" * 60)
+    log.info("Starting MVS depth estimation pipeline")
+    log.info("=" * 60)
+
+    # ==================== Configuration ====================
+    norm_mean = [0.485, 0.456, 0.406]
+    norm_std = [0.229, 0.224, 0.225]
+    stage_downsample = {1: 0.25, 2: 0.5, 3: 1.0}
+
+    output_dir = Path(args.outdir)
+
     inv_normalize = transforms.Normalize(
-        mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.255],
-        std=[1 / 0.229, 1 / 0.224, 1 / 0.255]
+        mean=[-m / s for m, s in zip(norm_mean, norm_std)],
+        std=[1 / s for s in norm_std]
     )
 
-    # dataset, dataloader
+    # ==================== Setup Output Directories ====================
+    log.info("Setting up output directories: %s", output_dir)
+    subdirs = ["depth_est", "depth_map", "confidence", "confidence_map", "cams", "images", "ply_local"]
+    for subdir in subdirs:
+        (output_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    # ==================== Load Dataset ====================
+    log.info("Loading dataset: %s", args.dataset)
+    log.info("Test path: %s", args.testpath)
+
     MVSDataset = find_dataset_def(args.dataset)
-    test_dataset = MVSDataset(args.testpath, testlist, "test", args.num_view, args.numdepth, Interval_Scale,
-                              max_h=args.max_h, max_w=args.max_w, fix_res=args.fix_res)
-    TestImgLoader = DataLoader(test_dataset, args.batch_size, shuffle=False, num_workers=1, drop_last=False)
+    dataset = MVSDataset(
+        args.testpath, testlist, "test", args.num_view, args.numdepth, Interval_Scale,
+        max_h=args.max_h, max_w=args.max_w, fix_res=args.fix_res
+    )
+    dataloader = DataLoader(dataset, args.batch_size, shuffle=False, num_workers=1, drop_last=False)
 
-    model = CascadeMVSNet_eval(refine=False, ndepths=[int(nd) for nd in args.ndepths.split(",") if nd],
-                               depth_interals_ratio=[float(d_i) for d_i in args.depth_inter_r.split(",") if d_i],
-                               share_cr=args.share_cr,
-                               cr_base_chs=[int(ch) for ch in args.cr_base_chs.split(",") if ch],
-                               grad_method=args.grad_method)
+    log.info("Dataset loaded: %d samples, %d batches", len(dataset), len(dataloader))
 
-    # load checkpoint file specified by args.loadckpt
-    print("loading model {}".format(args.loadckpt))
-    state_dict = torch.load(args.loadckpt, map_location=torch.device("cpu"), weights_only=True)
+    # ==================== Load Model ====================
+    log.info("Loading model from: %s", args.loadckpt)
+
+    model = CascadeMVSNet_eval(
+        refine=False,
+        ndepths=[int(nd) for nd in args.ndepths.split(",") if nd],
+        depth_interals_ratio=[float(d) for d in args.depth_inter_r.split(",") if d],
+        share_cr=args.share_cr,
+        cr_base_chs=[int(ch) for ch in args.cr_base_chs.split(",") if ch],
+        grad_method=args.grad_method
+    )
+
+    state_dict = torch.load(args.loadckpt, map_location="cpu", weights_only=True)
     model.load_state_dict(state_dict['model'], strict=True)
     model = nn.DataParallel(model)
     model.cuda()
     model.eval()
 
-    image_total = len(TestImgLoader)
-    total_size = len(str(image_total))
+    log.info("Model loaded - ndepths: %s, depth_inter_r: %s", args.ndepths, args.depth_inter_r)
+
+    # ==================== Run Inference ====================
+    log.info("-" * 60)
+    log.info("Starting inference...")
+    log.info("-" * 60)
+
+    total_batches = len(dataloader)
+    total_width = len(str(total_batches))
+    total_time = 0.0
 
     with torch.no_grad():
-        for batch_idx, sample in enumerate(TestImgLoader):
+        for batch_idx, sample in enumerate(dataloader):
+            batch_start = time.time()
+
+            # Inference
             sample_cuda = tocuda(sample)
-            start_time = time.time()
-            outputs = model(sample_cuda["imgs"], sample_cuda["proj_matrices"], sample_cuda["depth_values"])
-            end_time = time.time()
+            outputs = model(
+                sample_cuda["imgs"],
+                sample_cuda["proj_matrices"],
+                sample_cuda["depth_values"]
+            )
+            inference_time = time.time() - batch_start
+            total_time += inference_time
+
+            # Convert to numpy and free GPU memory
             outputs = tensor2numpy(outputs)
             del sample_cuda
-            filenames = sample["filename"]
-            cams = sample["proj_matrices"]["stage{}".format(num_stage)].numpy()
-            # imgs = sample["imgs"].numpy()
-            imgs = sample["imgs"]
+
+            # Get metadata
             depth_values = sample["depth_values"]
-            depth_start, depth_end = depth_values[0][0], depth_values[0][-1]
+            depth_range = (depth_values[0][0].item(), depth_values[0][-1].item())
+            stage_key = f"stage{num_stage}"
+            cams = sample["proj_matrices"][stage_key].numpy()
 
-            print(f"Progress: {batch_idx:0{total_size}d}/{image_total} - "
-                  f"Time: {end_time - start_time:.2f}s", flush=True)
+            # Process each sample in batch
+            for idx, filename in enumerate(sample["filename"]):
+                # Generate output paths
+                paths = {
+                    "depth": output_dir / filename.format("depth_est", ".pfm"),
+                    "depth_img": output_dir / filename.format("depth_map", ".jpg"),
+                    "confidence": output_dir / filename.format("confidence", ".pfm"),
+                    "confidence_img": output_dir / filename.format("confidence_map", ".jpg"),
+                    "cam": output_dir / filename.format("cams", "_cam.txt"),
+                    "image": output_dir / filename.format("images", ".jpg"),
+                    "ply": output_dir / filename.format("ply_local", ".ply"),
+                }
 
-            # save depth maps and confidence maps
-            for filename, cam, img, depth_est, photometric_confidence in zip(filenames, cams, imgs,
-                                                                             outputs["depth"],
-                                                                             outputs["photometric_confidence"]):
-                img = img[0]  # ref view
-                img = inv_normalize(img).numpy()
-                cam = cam[0]  # ref cam
+                # Get sample data
+                img_tensor = sample["imgs"][idx][0]  # Reference view
+                cam = cams[idx][0]  # Reference camera
+                depth = outputs["depth"][idx]
+                confidence = outputs["photometric_confidence"][idx]
 
-                depth_filename = os.path.join(args.outdir, filename.format('depth_est', '.pfm'))
-                confidence_filename = os.path.join(args.outdir, filename.format('confidence', '.pfm'))
-                confidence_img_filename = os.path.join(args.outdir, filename.format('confidence_map', '.jpg'))
-                cam_filename = os.path.join(args.outdir, filename.format('cams', '_cam.txt'))
-                img_filename = os.path.join(args.outdir, filename.format('images', '.jpg'))
-                ply_filename = os.path.join(args.outdir, filename.format('ply_local', '.ply'))
-                pred_depth_img_path = os.path.join(args.outdir, filename.format("depth_map", '.jpg'))
-
-                os.makedirs(depth_filename.rsplit('/', 1)[0], exist_ok=True)
-                os.makedirs(confidence_filename.rsplit('/', 1)[0], exist_ok=True)
-                os.makedirs(confidence_img_filename.rsplit('/', 1)[0], exist_ok=True)
-                os.makedirs(cam_filename.rsplit('/', 1)[0], exist_ok=True)
-                os.makedirs(img_filename.rsplit('/', 1)[0], exist_ok=True)
-                os.makedirs(ply_filename.rsplit('/', 1)[0], exist_ok=True)
-                os.makedirs(pred_depth_img_path.rsplit('/', 1)[0], exist_ok=True)
-
-                # save depth maps
-                save_pfm(depth_filename, depth_est)
-
-                # save depth_image_map_rgb
-                # pred_depth_img_path = os.path.join(args.outdir,filename.format("depth_map",'.jpg'))
-                plt.imsave(pred_depth_img_path, depth_est, cmap="rainbow", vmin=depth_start, vmax=depth_end)
-
-                confidence_min = np.min(photometric_confidence)
-                confidence_max = np.max(photometric_confidence)
-                # save confidence maps
-                save_pfm(confidence_filename, photometric_confidence)
-                plt.imsave(confidence_img_filename, photometric_confidence, cmap="rainbow", vmin=confidence_min,
-                           vmax=confidence_max)
-                # save cams, img
-                write_cam(cam_filename, cam)
+                # Restore image
+                img = inv_normalize(img_tensor).numpy()
                 img = np.clip(np.transpose(img, (1, 2, 0)) * 255, 0, 255).astype(np.uint8)
-                img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(img_filename, img_bgr)
 
-                # vis
-                # print(photometric_confidence.mean(), photometric_confidence.min(), photometric_confidence.max())
-                # import matplotlib.pyplot as plt
-                # plt.subplot(1, 3, 1)
-                # plt.imshow(img)
-                # plt.subplot(1, 3, 2)
-                # plt.imshow((depth_est - depth_est.min())/(depth_est.max() - depth_est.min()))
-                # plt.subplot(1, 3, 3)
-                # plt.imshow(photometric_confidence)
-                # plt.show()
+                # Save depth map
+                save_pfm(str(paths["depth"]), depth)
+                plt.imsave(str(paths["depth_img"]), depth, cmap="rainbow",
+                           vmin=depth_range[0], vmax=depth_range[1])
 
-                if num_stage == 1:
-                    downsample_img = cv2.resize(img, (int(img.shape[1] * 0.25), int(img.shape[0] * 0.25)))
-                elif num_stage == 2:
-                    downsample_img = cv2.resize(img, (int(img.shape[1] * 0.5), int(img.shape[0] * 0.5)))
-                elif num_stage == 3:
-                    downsample_img = img
+                # Save confidence map
+                save_pfm(str(paths["confidence"]), confidence)
+                plt.imsave(str(paths["confidence_img"]), confidence, cmap="rainbow",
+                           vmin=confidence.min(), vmax=confidence.max())
 
-                if batch_idx == (len(TestImgLoader) - 1):
-                    generate_pointcloud(downsample_img, depth_est, ply_filename, cam[1, :3, :3])
+                # Save camera and image
+                write_cam(str(paths["cam"]), cam)
+                cv2.imwrite(str(paths["image"]), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
+                # Generate point cloud (last batch only)
+                if batch_idx == total_batches - 1:
+                    ratio = stage_downsample.get(num_stage, 1.0)
+                    if ratio < 1.0:
+                        downsample_img = cv2.resize(img, (int(img.shape[1] * ratio), int(img.shape[0] * ratio)))
+                    else:
+                        downsample_img = img
+
+                    generate_pointcloud(downsample_img, depth, str(paths["ply"]), cam[1, :3, :3])
+                    log.info("Generated point cloud: %s", paths["ply"])
+
+            # Log progress
+            avg_time = total_time / (batch_idx + 1)
+            remaining = avg_time * (total_batches - batch_idx - 1)
+            log.info(
+                "Batch [%s/%d] | Time: %.2fs | Avg: %.2fs | ETA: %.1fs",
+                f"{batch_idx + 1:0{total_width}d}", total_batches,
+                inference_time, avg_time, remaining
+            )
+
+    # ==================== Cleanup ====================
     torch.cuda.empty_cache()
     gc.collect()
+
+    log.info("-" * 60)
+    log.info("Depth estimation completed")
+    log.info("Total time: %.2fs | Average: %.2fs/batch", total_time, total_time / total_batches)
+    log.info("Output saved to: %s", output_dir)
+    log.info("=" * 60)
 
 
 # project the reference point cloud into the source view, then project back
@@ -400,9 +453,6 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
         save_mask(os.path.join(out_folder, "mask/{:0>8}_geo.png".format(ref_view)), geo_mask)
         save_mask(os.path.join(out_folder, "mask/{:0>8}_final.png".format(ref_view)), final_mask)
 
-        print(f"Reference View: {ref_view:02d} | Photo: {photo_mask.mean():.4f}, "
-              f"Geo: {geo_mask.mean():.4f}, Final: {final_mask.mean():.4f}",
-              flush=True)
         filtered_depth = ref_depth_est * final_mask.astype(np.float32)
         os.makedirs(os.path.join(out_folder, "filtered_depth"), exist_ok=True)
         plt.imsave(os.path.join(out_folder, "filtered_depth/{:0>8}.jpg".format(ref_view)), filtered_depth,
@@ -420,10 +470,17 @@ def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_thresho
         x, y = np.meshgrid(np.arange(0, width), np.arange(0, height))
         # valid_points = np.logical_and(final_mask, ~used_mask[ref_view])
         valid_points = final_mask
-        print("valid_points", valid_points.mean())
+
+        print(f"Reference View: {ref_view:02d} | "
+              f"Photo: {photo_mask.mean():>7.4f}, "
+              f"Geo: {geo_mask.mean():>7.4f}, "
+              f"Final: {final_mask.mean():>7.4f}, "
+              f"valid_points: {valid_points.mean():>7.4f}",
+              flush=True)
         x, y, depth = x[valid_points], y[valid_points], depth_est_averaged[valid_points]
         # color = ref_img[1:-16:4, 1::4, :][valid_points]  # hardcoded for DTU dataset
 
+        color = ref_img[valid_points]
         if num_stage == 1:
             color = ref_img[1::4, 1::4, :][valid_points]
         elif num_stage == 2:

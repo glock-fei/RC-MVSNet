@@ -317,4 +317,4 @@ def generate_pointcloud(rgb, depth, ply_file, intr, scale=1.0):
             %s
             ''' % (len(points), "".join(points)))
     file.close()
-    print("save ply, fx:{}, fy:{}, cx:{}, cy:{}".format(fx, fy, cx, cy))
+    print(f"Save PointCloud | fx:{fx:8.2f} fy:{fy:8.2f} cx:{cx:8.2f} cy:{cy:8.2f}")
