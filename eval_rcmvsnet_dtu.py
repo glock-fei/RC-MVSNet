@@ -85,6 +85,8 @@ if args.testpath_single_scene:
 num_stage = len([int(nd) for nd in args.ndepths.split(",") if nd])
 
 Interval_Scale = args.interval_scale
+
+
 # print("***********Interval_Scale**********\n", Interval_Scale)
 
 
@@ -391,131 +393,254 @@ def check_geometric_consistency(depth_ref, intrinsics_ref, extrinsics_ref, depth
     return mask, depth_reprojected, x2d_src, y2d_src
 
 
-def filter_depth(pair_folder, scan_folder, out_folder, plyfilename, prob_threshold, num_consistent, img_dist_thresh,
-                 depth_thresh):
-    # the pair file
-    pair_file = os.path.join(pair_folder, "pair.txt")
-    # for the final point cloud
-    vertexs = []
-    vertex_colors = []
+def _display_results(
+        ref_img: np.ndarray,
+        ref_depth: np.ndarray,
+        photo_mask: np.ndarray,
+        geo_mask: np.ndarray,
+        final_mask: np.ndarray
+) -> None:
+    """Display intermediate results using OpenCV."""
+    import cv2
 
-    pair_data = read_pair_file(pair_file)
-    nviews = len(pair_data)
+    depth_scale = ref_depth.max() if ref_depth.max() > 0 else 1
 
-    # for each reference view and the corresponding source views
-    for ref_view, src_views in pair_data:
-        # src_views = src_views[:args.num_view]
-        # load the camera parameters
-        ref_intrinsics, ref_extrinsics = read_camera_parameters(
-            os.path.join(scan_folder, 'cams/{:0>8}_cam.txt'.format(ref_view)))
-        # load the reference image
-        ref_img = read_img(os.path.join(scan_folder, 'images/{:0>8}.jpg'.format(ref_view)))
-        # load the estimated depth of the reference view
-        ref_depth_est = read_pfm(os.path.join(out_folder, 'depth_est/{:0>8}.pfm'.format(ref_view)))[0]
-        # load the photometric mask of the reference view
-        confidence = read_pfm(os.path.join(out_folder, 'confidence/{:0>8}.pfm'.format(ref_view)))[0]
-        photo_mask = confidence > prob_threshold
+    cv2.imshow('ref_img', ref_img[:, :, ::-1])
+    cv2.imshow('ref_depth', ref_depth / depth_scale)
+    cv2.imshow('ref_depth * photo_mask', ref_depth * photo_mask.astype(np.float32) / depth_scale)
+    cv2.imshow('ref_depth * geo_mask', ref_depth * geo_mask.astype(np.float32) / depth_scale)
+    cv2.imshow('ref_depth * final_mask', ref_depth * final_mask.astype(np.float32) / depth_scale)
+    cv2.waitKey(0)
 
-        all_srcview_depth_ests = []
-        all_srcview_x = []
-        all_srcview_y = []
-        all_srcview_geomask = []
 
-        # compute the geometric mask
-        geo_mask_sum = 0
-        for src_view in src_views:
-            # camera parameters of the source view
-            src_intrinsics, src_extrinsics = read_camera_parameters(
-                os.path.join(scan_folder, 'cams/{:0>8}_cam.txt'.format(src_view)))
-            # the estimated depth of the source view
-            src_depth_est = read_pfm(os.path.join(out_folder, 'depth_est/{:0>8}.pfm'.format(src_view)))[0]
+def _get_colors(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Get colors for valid points based on stage downsampling."""
+    if num_stage == 1:
+        return img[1::4, 1::4, :][mask]
+    elif num_stage == 2:
+        return img[1::2, 1::2, :][mask]
+    else:
+        return img[mask]
 
-            geo_mask, depth_reprojected, x2d_src, y2d_src = check_geometric_consistency(ref_depth_est, ref_intrinsics,
-                                                                                        ref_extrinsics,
-                                                                                        src_depth_est,
-                                                                                        src_intrinsics, src_extrinsics,
-                                                                                        img_dist_thresh=img_dist_thresh,
-                                                                                        depth_thresh=depth_thresh)
-            geo_mask_sum += geo_mask.astype(np.int32)
-            all_srcview_depth_ests.append(depth_reprojected)
-            all_srcview_x.append(x2d_src)
-            all_srcview_y.append(y2d_src)
-            all_srcview_geomask.append(geo_mask)
 
-        depth_est_averaged = (sum(all_srcview_depth_ests) + ref_depth_est) / (geo_mask_sum + 1)
-        # at least 3 source views matched
-        geo_mask = geo_mask_sum >= num_consistent
-        final_mask = np.logical_and(photo_mask, geo_mask)
+def _save_ply(filename: str, vertices: np.ndarray, colors: np.ndarray) -> None:
+    """Save point cloud to PLY file."""
+    log.info("Saving PLY file: %s", filename)
 
-        os.makedirs(os.path.join(out_folder, "mask"), exist_ok=True)
-        save_mask(os.path.join(out_folder, "mask/{:0>8}_photo.png".format(ref_view)), photo_mask)
-        save_mask(os.path.join(out_folder, "mask/{:0>8}_geo.png".format(ref_view)), geo_mask)
-        save_mask(os.path.join(out_folder, "mask/{:0>8}_final.png".format(ref_view)), final_mask)
+    # Create structured arrays
+    vertices_structured: np.ndarray = np.array(
+        [tuple(v) for v in vertices],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')]
+    )
+    colors_structured: np.ndarray = np.array(
+        [tuple(c) for c in colors],
+        dtype=[('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+    )
 
-        filtered_depth = ref_depth_est * final_mask.astype(np.float32)
-        os.makedirs(os.path.join(out_folder, "filtered_depth"), exist_ok=True)
-        plt.imsave(os.path.join(out_folder, "filtered_depth/{:0>8}.jpg".format(ref_view)), filtered_depth,
-                   cmap="rainbow")
-        if args.display:
-            import cv2
-            cv2.imshow('ref_img', ref_img[:, :, ::-1])
-            cv2.imshow('ref_depth', ref_depth_est / 800)
-            cv2.imshow('ref_depth * photo_mask', ref_depth_est * photo_mask.astype(np.float32) / 800)
-            cv2.imshow('ref_depth * geo_mask', ref_depth_est * geo_mask.astype(np.float32) / 800)
-            cv2.imshow('ref_depth * mask', ref_depth_est * final_mask.astype(np.float32) / 800)
-            cv2.waitKey(0)
+    # Merge into single structured array
+    vertex_all: np.ndarray = np.empty(
+        len(vertices),
+        dtype=vertices_structured.dtype.descr + colors_structured.dtype.descr
+    )
 
-        height, width = depth_est_averaged.shape[:2]
-        x, y = np.meshgrid(np.arange(0, width), np.arange(0, height))
-        # valid_points = np.logical_and(final_mask, ~used_mask[ref_view])
-        valid_points = final_mask
+    for prop in vertices_structured.dtype.names:
+        vertex_all[prop] = vertices_structured[prop]
+    for prop in colors_structured.dtype.names:
+        vertex_all[prop] = colors_structured[prop]
 
-        print(f"Reference View: {ref_view:02d} | "
-              f"Photo: {photo_mask.mean():>7.4f}, "
-              f"Geo: {geo_mask.mean():>7.4f}, "
-              f"Final: {final_mask.mean():>7.4f}, "
-              f"valid_points: {valid_points.mean():>7.4f}",
-              flush=True)
-        x, y, depth = x[valid_points], y[valid_points], depth_est_averaged[valid_points]
-        # color = ref_img[1:-16:4, 1::4, :][valid_points]  # hardcoded for DTU dataset
-
-        color = ref_img[valid_points]
-        if num_stage == 1:
-            color = ref_img[1::4, 1::4, :][valid_points]
-        elif num_stage == 2:
-            color = ref_img[1::2, 1::2, :][valid_points]
-        elif num_stage == 3:
-            color = ref_img[valid_points]
-
-        xyz_ref = np.matmul(np.linalg.inv(ref_intrinsics),
-                            np.vstack((x, y, np.ones_like(x))) * depth)
-        xyz_world = np.matmul(np.linalg.inv(ref_extrinsics),
-                              np.vstack((xyz_ref, np.ones_like(x))))[:3]
-        vertexs.append(xyz_world.transpose((1, 0)))
-        vertex_colors.append((color * 255).astype(np.uint8))
-
-        # # set used_mask[ref_view]
-        # used_mask[ref_view][...] = True
-        # for idx, src_view in enumerate(src_views):
-        #     src_mask = np.logical_and(final_mask, all_srcview_geomask[idx])
-        #     src_y = all_srcview_y[idx].astype(np.int)
-        #     src_x = all_srcview_x[idx].astype(np.int)
-        #     used_mask[src_view][src_y[src_mask], src_x[src_mask]] = True
-
-    vertexs = np.concatenate(vertexs, axis=0)
-    vertex_colors = np.concatenate(vertex_colors, axis=0)
-    vertexs = np.array([tuple(v) for v in vertexs], dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')])
-    vertex_colors = np.array([tuple(v) for v in vertex_colors], dtype=[('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])
-
-    vertex_all = np.empty(len(vertexs), vertexs.dtype.descr + vertex_colors.dtype.descr)
-    for prop in vertexs.dtype.names:
-        vertex_all[prop] = vertexs[prop]
-    for prop in vertex_colors.dtype.names:
-        vertex_all[prop] = vertex_colors[prop]
-
+    # Write PLY
     el = PlyElement.describe(vertex_all, 'vertex')
-    PlyData([el]).write(plyfilename)
-    print("Saved the final model to", plyfilename)
+    PlyData([el]).write(filename)
+
+    log.info("Saved %d points to PLY file", len(vertices))
+
+
+def filter_depth(
+        pair_folder: str,
+        scan_folder: str,
+        out_folder: str,
+        ply_filename: str,
+        prob_threshold: float = 0.8,
+        num_consistent: int = 3,
+        img_dist_thresh: float = 1.0,
+        depth_thresh: float = 0.01,
+        display: bool = False
+) -> str:
+    """
+    Filter and fuse multi-view depth maps into a single point cloud.
+
+    This function performs:
+        1. Photometric consistency filtering (confidence threshold)
+        2. Geometric consistency filtering (multi-view depth agreement)
+        3. Depth fusion and reprojection to 3D world coordinates
+
+    Args:
+        pair_folder: Folder containing pair.txt
+        scan_folder: Folder containing camera parameters and images
+        out_folder: Folder containing depth estimation results
+        ply_filename: Output PLY file path
+        prob_threshold: Confidence threshold for photometric filtering
+        num_consistent: Minimum number of consistent source views
+        img_dist_thresh: Pixel distance threshold for geometric consistency
+        depth_thresh: Depth difference threshold for geometric consistency
+        display: Whether to display intermediate results
+
+    Returns:
+        Path to the saved PLY file
+    """
+    log.info("=" * 60)
+    log.info("Starting depth filtering and fusion")
+    log.info("=" * 60)
+
+    # Setup paths
+    scan_folder = Path(scan_folder)
+    out_folder = Path(out_folder)
+    pair_file = Path(pair_folder) / "pair.txt"
+
+    # Create output directories
+    mask_folder = out_folder / "mask"
+    filtered_depth_folder = out_folder / "filtered_depth"
+    mask_folder.mkdir(parents=True, exist_ok=True)
+    filtered_depth_folder.mkdir(parents=True, exist_ok=True)
+
+    # Read pair file
+    pair_data = read_pair_file(str(pair_file))
+    num_views = len(pair_data)
+    log.info("Loaded %d reference views from pair file", num_views)
+
+    # Accumulators for final point cloud
+    all_vertices = []
+    all_colors = []
+
+    # Statistics
+    total_points = 0
+    start_time = time.time()
+
+    for idx, (ref_view, src_views) in enumerate(pair_data):
+        view_start = time.time()
+
+        cam_file = scan_folder / f"cams/{ref_view:08d}_cam.txt"
+        img_file = scan_folder / f"images/{ref_view:08d}.jpg"
+        depth_file = out_folder / f"depth_est/{ref_view:08d}.pfm"
+        conf_file = out_folder / f"confidence/{ref_view:08d}.pfm"
+
+        # Load reference view data
+        ref_intrinsics, ref_extrinsics = read_camera_parameters(cam_file)
+        ref_img = read_img(img_file)
+        ref_depth = read_pfm(depth_file)[0]
+        ref_confidence = read_pfm(conf_file)[0]
+
+        # Step 1: Photometric consistency mask
+        photo_mask = ref_confidence > prob_threshold
+
+        # Step 2: Geometric consistency mask
+        geo_mask_sum = np.zeros_like(ref_depth, dtype=np.int32)
+        depth_reprojected_sum = np.zeros_like(ref_depth, dtype=np.float32)
+
+        for src_view in src_views:
+            src_cam_file = scan_folder / f"cams/{src_view:08d}_cam.txt"
+            src_depth_file = out_folder / f"depth_est/{src_view:08d}.pfm"
+
+            src_intrinsics, src_extrinsics = read_camera_parameters(src_cam_file)
+            src_depth = read_pfm(src_depth_file)[0]
+
+            geo_mask, depth_reprojected, _, _ = check_geometric_consistency(
+                ref_depth, ref_intrinsics, ref_extrinsics,
+                src_depth, src_intrinsics, src_extrinsics,
+                img_dist_thresh=img_dist_thresh,
+                depth_thresh=depth_thresh
+            )
+
+            geo_mask_sum += geo_mask.astype(np.int32)
+            depth_reprojected_sum += depth_reprojected
+
+        # Fused depth (average of consistent views)
+        depth_fused = (depth_reprojected_sum + ref_depth) / (geo_mask_sum + 1)
+
+        # At least num_consistent source views must agree
+        geo_mask: np.ndarray = geo_mask_sum >= num_consistent
+
+        # Step 3: Combined mask
+        final_mask = photo_mask & geo_mask
+
+        # Save masks and filtered depth
+        save_mask(str(mask_folder / f"{ref_view:08d}_photo.png"), photo_mask)
+        save_mask(str(mask_folder / f"{ref_view:08d}_geo.png"), geo_mask)
+        save_mask(str(mask_folder / f"{ref_view:08d}_final.png"), final_mask)
+
+        filtered_depth = ref_depth * final_mask.astype(np.float32)
+        plt.imsave(str(filtered_depth_folder / f"{ref_view:08d}.jpg"), filtered_depth, cmap="rainbow")
+
+        # Display if requested
+        if display:
+            _display_results(ref_img, ref_depth, photo_mask, geo_mask, final_mask)
+
+        # Step 4: Reproject to 3D world coordinates
+        height, width = depth_fused.shape[:2]
+        x, y = np.meshgrid(np.arange(width), np.arange(height))
+
+        valid_points = final_mask
+        x_valid = x[valid_points]
+        y_valid = y[valid_points]
+        depth_valid = depth_fused[valid_points]
+
+        # Get colors based on stage
+        color_valid = _get_colors(ref_img, valid_points)
+
+        # 2D + depth -> 3D camera coordinates
+        xyz_cam = np.linalg.inv(ref_intrinsics) @ np.vstack([
+            x_valid, y_valid, np.ones_like(x_valid)
+        ]) * depth_valid
+
+        # 3D camera -> 3D world coordinates
+        xyz_world = np.linalg.inv(ref_extrinsics) @ np.vstack([
+            xyz_cam, np.ones_like(x_valid)
+        ])
+        xyz_world = xyz_world[:3].T
+
+        all_vertices.append(xyz_world)
+        all_colors.append((color_valid * 255).astype(np.uint8))
+
+        # Statistics
+        num_valid = valid_points.sum()
+        total_points += num_valid
+
+        # Progress log
+        view_time = time.time() - view_start
+        elapsed = time.time() - start_time
+        avg_time = elapsed / (idx + 1)
+        eta = avg_time * (num_views - idx - 1)
+
+        log.info(
+            "View [%02d/%02d] | Photo: %.2f%% | Geo: %.2f%% | Final: %.2f%% | "
+            "Points: %6d | Time: %.2fs | ETA: %.1fs",
+            idx + 1, num_views,
+            photo_mask.mean() * 100,
+            geo_mask.mean() * 100,
+            final_mask.mean() * 100,
+            num_valid,
+            view_time,
+            eta
+        )
+
+    # Merge all vertices and colors
+    log.info("-" * 60)
+    log.info("Merging point cloud...")
+
+    vertices = np.concatenate(all_vertices, axis=0)
+    colors = np.concatenate(all_colors, axis=0)
+
+    log.info("Total points: %d", len(vertices))
+
+    # Save PLY file
+    _save_ply(ply_filename, vertices, colors)
+
+    # Final statistics
+    total_time = time.time() - start_time
+    log.info("Depth filtering completed")
+    log.info("Total time: %.2fs (%.2fs/view)", total_time, total_time / num_views)
+
+    return ply_filename
 
 
 def init_worker():
