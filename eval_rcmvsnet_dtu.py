@@ -196,7 +196,7 @@ def save_scene_depth(testlist: List[str]) -> None:
     )
 
     # ==================== Load Dataset ====================
-    log.info("Test path: %s", args.testpath)
+    log.info("Dataset path: %s", args.testpath)
 
     MVSDataset = find_dataset_def(args.dataset)
     dataset = MVSDataset(
@@ -326,13 +326,12 @@ def save_scene_depth(testlist: List[str]) -> None:
 
     log.info("Depth estimation completed")
     log.info("Total time: %.2fs | Average: %.2fs/batch", total_time, total_time / total_batches)
-    log.info("=" * 60)
 
 
 # project the reference point cloud into the source view, then project back
 def reproject_with_depth(depth_ref, intrinsics_ref, extrinsics_ref, depth_src, intrinsics_src, extrinsics_src):
     width, height = depth_ref.shape[1], depth_ref.shape[0]
-    ## step1. project reference pixels to the source view
+    # step1. project reference pixels to the source view
     # reference view x, y
     x_ref, y_ref = np.meshgrid(np.arange(0, width), np.arange(0, height))
     x_ref, y_ref = x_ref.reshape([-1]), y_ref.reshape([-1])
@@ -346,7 +345,7 @@ def reproject_with_depth(depth_ref, intrinsics_ref, extrinsics_ref, depth_src, i
     K_xyz_src = np.matmul(intrinsics_src, xyz_src)
     xy_src = K_xyz_src[:2] / K_xyz_src[2:3]
 
-    ## step2. reproject the source view points with source view depth estimation
+    # step2. reproject the source view points with source view depth estimation
     # find the depth estimation of the source view
     x_src = xy_src[0].reshape([height, width]).astype(np.float32)
     y_src = xy_src[1].reshape([height, width]).astype(np.float32)
@@ -488,9 +487,9 @@ def filter_depth(
     Returns:
         Path to the saved PLY file
     """
-    log.info("=" * 60)
+    log.info("-" * 60)
     log.info("Starting depth filtering and fusion")
-    log.info("=" * 60)
+    log.info("-" * 60)
 
     # Setup paths
     scan_folder = Path(scan_folder)
@@ -624,7 +623,6 @@ def filter_depth(
         )
 
     # Merge all vertices and colors
-    log.info("-" * 60)
     log.info("Merging point cloud...")
 
     vertices = np.concatenate(all_vertices, axis=0)
