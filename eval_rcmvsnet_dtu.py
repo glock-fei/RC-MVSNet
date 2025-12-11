@@ -315,7 +315,7 @@ def save_scene_depth(testlist: List[str]) -> None:
             avg_time = total_time / (batch_idx + 1)
             remaining = avg_time * (total_batches - batch_idx - 1)
             log.info(
-                "Batch [%s/%d] | Time: %.2fs | Avg: %.2fs | ETA: %.1fs",
+                "Batch [%s/%d] | Time: %6.2fs | Avg: %6.2fs | ETA: %6.1fs",
                 f"{batch_idx + 1:0{total_width}d}", total_batches,
                 inference_time, avg_time, remaining
             )
@@ -611,15 +611,14 @@ def filter_depth(
         eta = avg_time * (num_views - idx - 1)
 
         log.info(
-            "View [%02d/%02d] | Photo: %.2f%% | Geo: %.2f%% | Final: %.2f%% | "
-            "Points: %6d | Time: %.2fs | ETA: %.1fs",
+            "View [%02d/%02d] | Photo: %6.2f%% | Geo: %6.2f%% | Final: %6.2f%% | "
+            "Points: %6d | Time: %5.2fs",
             idx + 1, num_views,
             photo_mask.mean() * 100,
             geo_mask.mean() * 100,
             final_mask.mean() * 100,
             num_valid,
-            view_time,
-            eta
+            view_time
         )
 
     # Merge all vertices and colors
